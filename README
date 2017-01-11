@@ -1,0 +1,6 @@
+
+cd /opt/vc/src/hello_pi && sudo ./rebuild.sh
+
+make
+
+
