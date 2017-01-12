@@ -30,11 +30,103 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <unistd.h>
+#include <getopt.h>
+#include <pthread.h>
+#include <time.h>
+
+#include "VG/openvg.h"
+#include "VG/vgu.h"
+#include <fontinfo.h>
+#include <shapes.h>
+
+int width, height;
+int logo_w = 737, logo_h = 720;
+char logo_path[50] = "ariss_logo.jpg";
 
 #include "bcm_host.h"
 #include "ilclient.h"
 
-static int video_decode_test(char *filename)
+#include "input_buffer.h"
+rxBuffer_t rxBuffer;
+
+static FILE *input_file;
+static int input_socket;
+
+enum input_source_t {SOURCE_TCP, SOURCE_FILE, SOURCE_NONE};
+static enum input_source_t input_source = SOURCE_NONE;
+
+static uint64_t data_received = 0;
+
+static uint64_t timestamp(void) {
+  uint64_t _ts = 0;
+  
+  struct timespec spec;
+  clock_gettime(CLOCK_REALTIME, &spec);
+  _ts = (uint64_t) spec.tv_sec;
+
+  return _ts;
+}
+
+static void sleep_ms(uint32_t _duration)
+{
+    struct timespec req, rem;
+    req.tv_sec = _duration / 1000;
+    req.tv_nsec = (_duration - (req.tv_sec*1000))*1000*1000;
+    
+    while(nanosleep(&req, &rem) == EINTR)
+    {
+        /* Interrupted by signal, shallow copy remaining time into request, and resume */
+        req = rem;
+    }
+}
+
+static unsigned int ts_read(unsigned char* destination, unsigned int length)
+{
+	switch(input_source)
+	{
+		case SOURCE_FILE:
+			return fread(destination, 1, length, input_file);
+
+		case SOURCE_TCP:
+			return rxBufferTimedWaitPop(&rxBuffer, destination, length, 3000);
+		case SOURCE_NONE:
+		default:
+			return 0;
+	}
+}
+
+//static int video_decode_test(void)
+pthread_t video_thread;
+void video_play(void);
+void* video_loop(void *arg)
+{
+	(void) arg;
+	uint32_t canary_length = 1;
+	uint8_t canary_buffer[1];
+
+	while(1)
+	{
+		init(&width, &height);
+		Start(width, height);
+	    Background(0, 0, 0);
+	    Image((width / 2)-(logo_w / 2), (3 * height / 5) - (logo_h / 2), logo_w, logo_h, logo_path);
+	    End();
+
+	    while(ts_read(canary_buffer,canary_length) == 0) {};
+		
+		finish();
+
+		printf("Starting video playback..\n");
+		video_play();
+	}
+}
+void video_play(void)
 {
    OMX_VIDEO_PARAM_PORTFORMATTYPE format;
    OMX_TIME_CONFIG_CLOCKSTATETYPE cstate;
@@ -42,27 +134,23 @@ static int video_decode_test(char *filename)
    COMPONENT_T *list[5];
    TUNNEL_T tunnel[4];
    ILCLIENT_T *client;
-   FILE *in;
    int status = 0;
    unsigned int data_len = 0;
 
    memset(list, 0, sizeof(list));
    memset(tunnel, 0, sizeof(tunnel));
 
-   if((in = fopen(filename, "rb")) == NULL)
-      return -2;
-
    if((client = ilclient_init()) == NULL)
    {
-      fclose(in);
-      return -3;
+   		printf("Error: Null video client!\n");
+      return;
    }
 
    if(OMX_Init() != OMX_ErrorNone)
    {
       ilclient_destroy(client);
-      fclose(in);
-      return -4;
+   		printf("Error: OMX Init failed!\n");
+      return;
    }
 
    // create video_decode
@@ -111,7 +199,10 @@ static int video_decode_test(char *filename)
    format.nVersion.nVersion = OMX_VERSION;
    format.nPortIndex = 130;
    format.eCompressionFormat = OMX_VIDEO_CodingAVC;
+   //format.eCompressionFormat = OMX_VIDEO_CodingMPEG4;
    //format.eCompressionFormat = OMX_VIDEO_CodingMPEG2;
+   //format.eCompressionFormat = OMX_VIDEO_CodingAutoDetect;
+	
 
    if(status == 0 &&
       OMX_SetParameter(ILC_GET_HANDLE(video_decode), OMX_IndexParamVideoPortFormat, &format) == OMX_ErrorNone &&
@@ -128,7 +219,15 @@ static int video_decode_test(char *filename)
          // feed data and wait until we get port settings changed
          unsigned char *dest = buf->pBuffer;
 
-         data_len += fread(dest, 1, buf->nAllocLen-data_len, in);
+         //data_len += fread(dest, 1, buf->nAllocLen-data_len, in);
+         uint32_t data_read = ts_read(dest, buf->nAllocLen-data_len);
+
+         if(data_read == 0)
+         {
+         	break;
+         }
+
+         data_len += data_read;
 
          if(port_settings_changed == 0 &&
             ((data_len > 0 && ilclient_remove_event(video_decode, OMX_EventPortSettingsChanged, 131, 0, 0, 1) == 0) ||
@@ -191,8 +290,6 @@ static int video_decode_test(char *filename)
 
    }
 
-   fclose(in);
-
    ilclient_disable_tunnel(tunnel);
    ilclient_disable_tunnel(tunnel+1);
    ilclient_disable_tunnel(tunnel+2);
@@ -207,17 +304,266 @@ static int video_decode_test(char *filename)
    OMX_Deinit();
 
    ilclient_destroy(client);
-   return status;
+   return;
+}
+
+static int ts_file_open(char* filename)
+{
+	if((input_file = fopen(filename, "rb")) == NULL)
+      	return -1;
+  	else
+  		return 0;
+}
+
+static int ts_tcp_open(char *hostname, char *port, int ai_family)
+{
+	int r;
+	struct addrinfo hints;
+	struct addrinfo *re, *rp;
+	char s[INET6_ADDRSTRLEN];
+	
+	memset(&hints, 0, sizeof(struct addrinfo));
+	hints.ai_family = ai_family;
+	hints.ai_socktype = SOCK_STREAM;
+	
+	r = getaddrinfo(hostname, port, &hints, &re);
+	if(r != 0)
+	{
+		printf("Error resolving hostname: %s\n", gai_strerror(r));
+		return(-1);
+	}
+	
+	/* Try IPv6 first */
+	for(input_socket = -1, rp = re; input_socket == -1 && rp != NULL; rp = rp->ai_next)
+	{
+		if(rp->ai_addr->sa_family != AF_INET6) continue;
+		
+		inet_ntop(AF_INET6, &(((struct sockaddr_in6 *) rp->ai_addr)->sin6_addr), s, INET6_ADDRSTRLEN);
+		//printf("Connecting to [%s]:%d\n", s, ntohs((((struct sockaddr_in6 *) rp->ai_addr)->sin6_port)));
+		
+		input_socket = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+		if(input_socket == -1)
+		{
+			//perror("socket");
+			continue;
+		}
+		
+		if(connect(input_socket, rp->ai_addr, rp->ai_addrlen) == -1)
+		{
+			//perror("connect");
+			close(input_socket);
+			input_socket = -1;
+		}
+	}
+	
+	/* Try IPv4 next */
+	for(rp = re; input_socket == -1 && rp != NULL; rp = rp->ai_next)
+	{
+		if(rp->ai_addr->sa_family != AF_INET) continue;
+		
+		inet_ntop(AF_INET, &(((struct sockaddr_in *) rp->ai_addr)->sin_addr), s, INET6_ADDRSTRLEN);
+		//printf("Connecting to %s:%d\n", s, ntohs((((struct sockaddr_in *) rp->ai_addr)->sin_port)));
+		
+		input_socket = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+		if(input_socket == -1)
+		{
+			//perror("socket");
+			continue;
+		}
+		
+		if(connect(input_socket, rp->ai_addr, rp->ai_addrlen) == -1)
+		{
+			//perror("connect");
+			close(input_socket);
+			input_socket = -1;
+		}
+	}
+	
+	freeaddrinfo(re);
+
+	int value = 1;
+	if (setsockopt(input_socket, IPPROTO_TCP, TCP_NODELAY, (char *)&value, sizeof(int)) < 0)
+      return -2;
+
+	if(input_socket < 0)
+		return -1;
+	else
+  		return 0;
+}
+
+static void _print_usage(void)
+{
+	printf(
+		"\n"
+		"Usage: tsplay [options]\n"
+		"\n"
+		"  -f, --file <name>      Set filename to read from. (conflicts with -h)\n"
+		"  -h, --host <name>      Set the hostname to read data from (conflicts with -f)\n"
+		"  -p, --port <number>    Set the port number to connect to on the host. Default: 5679\n"
+		"  -4, --ipv4             Force IPv4 only.\n"
+		"  -6, --ipv6             Force IPv6 only.\n"
+		"\n"
+	);
+}
+
+pthread_t tcp_rx_thread;
+struct tcp_rx_params_t {
+    char *hostname;
+    char *port;
+    int ai_family;
+};
+struct tcp_rx_params_t tcp_rx_params;
+void* tcp_rx_loop(void *arg)
+{
+	(void) arg;
+	int status;
+	uint32_t length;
+	uint8_t buffer[2048];
+
+	printf("Attempting to connect to TCP Input %s:%s\n",tcp_rx_params.hostname,tcp_rx_params.port);
+	while((status = ts_tcp_open(tcp_rx_params.hostname, tcp_rx_params.port, tcp_rx_params.ai_family)) < 0)
+	{
+		sleep(1);
+	}
+
+	printf("TCP Input Connected to %s:%s\n",tcp_rx_params.hostname,tcp_rx_params.port);
+
+	while(1)
+	{
+		length = recv(input_socket, buffer, 2048, 0);
+		if(length==0)
+		{
+			close(input_socket);
+
+			printf("Attempting to reconnect to TCP Input %s:%s\n",tcp_rx_params.hostname,tcp_rx_params.port);
+			while((status = ts_tcp_open(tcp_rx_params.hostname, tcp_rx_params.port, tcp_rx_params.ai_family)) < 0)
+			{
+				sleep(1);
+			}
+			printf("TCP Input re-connected to %s:%s\n",tcp_rx_params.hostname,tcp_rx_params.port);
+		}
+		else if(length<=2048)
+		{
+			rxBufferPush(&rxBuffer, buffer, length);
+			data_received = timestamp();
+		}
+	}
+
 }
 
 int main (int argc, char **argv)
 {
-   if (argc < 2) {
-      printf("Usage: %s <filename>\n", argv[0]);
-      exit(1);
-   }
-   bcm_host_init();
-   return video_decode_test(argv[1]);
+	int opt,c,status;
+	char *filename = NULL;
+	char *hostname = NULL;
+	char *port = "5679";
+	int ai_family = AF_INET;
+
+	static const struct option long_options[] = {
+		{ "file",        required_argument, 0, 'f' },
+		{ "host",        required_argument, 0, 'h' },
+		{ "port",        required_argument, 0, 'p' },
+		{ "ipv6",        no_argument,       0, '6' },
+		{ "ipv4",        no_argument,       0, '4' },
+		{ 0,             0,                 0,  0  }
+	};
+
+	opterr = 0;
+	while((c = getopt_long(argc, argv, "f:h:p:64", long_options, &opt)) != -1)
+	{
+		switch(c)
+		{
+		case 'f': /* --filename <name> */
+			filename = optarg;
+			input_source = SOURCE_FILE;
+			break;
+
+		case 'h': /* --host <name> */
+			hostname = optarg;
+			input_source = SOURCE_TCP;
+			break;
+		
+		case 'p': /* --port <number> */
+			port = optarg;
+			break;
+		
+		case '6': /* --ipv6 */
+			ai_family = AF_INET6;
+			break;
+		
+		case '4': /* --ipv4 */
+			ai_family = AF_INET;
+			break;
+		
+		case '?':
+			_print_usage();
+			return(0);
+		}
+	}
+
+	if(filename != NULL && hostname != NULL)
+	{
+		printf("Error: Only one source permitted!");
+		_print_usage();
+		return(-1);
+	}
+
+	switch(input_source)
+	{
+		case SOURCE_FILE:
+			if(ts_file_open(filename) < 0)
+			{
+				printf("Error: Opening file input failed!\n");
+				return(-1);
+			}
+			else
+			{
+				printf("File Input Opened: %s\n",filename);
+			}
+			break;
+
+		case SOURCE_TCP:
+			rxBufferInit(&rxBuffer);
+			tcp_rx_params.hostname = hostname;
+			tcp_rx_params.port = port;
+			tcp_rx_params.ai_family = ai_family;
+    		pthread_create(&tcp_rx_thread, NULL, &tcp_rx_loop, NULL);
+			break;
+
+		case SOURCE_NONE:
+			printf("Error: No source specified!\n");
+			_print_usage();
+			return(-1);
+	}
+	
+
+	printf("Initialising videocore..\n");
+   	bcm_host_init();
+
+   	printf("Starting video thread..\n");
+   	pthread_create(&video_thread, NULL, &video_loop, NULL);
+   	//status = video_decode_test();
+
+   	while(1) {
+   		sleep_ms(1000);
+   	};
+
+   	switch(input_source)
+	{
+		case SOURCE_FILE:
+			fclose(input_file);
+			printf("File Input closed.\n");
+			break;
+
+		case SOURCE_TCP:
+			close(input_socket);
+			printf("TCP Input closed\n");
+			break;
+		case SOURCE_NONE:
+			break;
+	}
+
+	return status;
 }
 
 
