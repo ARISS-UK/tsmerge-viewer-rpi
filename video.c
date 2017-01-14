@@ -40,20 +40,15 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <pthread.h>
 #include <time.h>
 
-#include "VG/openvg.h"
-#include "VG/vgu.h"
-#include <fontinfo.h>
-#include <shapes.h>
-
-int width, height;
-int logo_w = 737, logo_h = 720;
-char logo_path[50] = "ariss_logo.jpg";
-
 #include "bcm_host.h"
 #include "ilclient.h"
 
 #include "input_buffer.h"
 rxBuffer_t rxBuffer;
+
+#include "ts/ts.h"
+
+#define VIDEO_PID	256
 
 static FILE *input_file;
 static int input_socket;
@@ -112,15 +107,7 @@ void* video_loop(void *arg)
 
 	while(1)
 	{
-		init(&width, &height);
-		Start(width, height);
-	    Background(0, 0, 0);
-	    Image((width / 2)-(logo_w / 2), (3 * height / 5) - (logo_h / 2), logo_w, logo_h, logo_path);
-	    End();
-
 	    while(ts_read(canary_buffer,canary_length) == 0) {};
-		
-		finish();
 
 		printf("Starting video playback..\n");
 		video_play();
@@ -198,9 +185,9 @@ void video_play(void)
    format.nSize = sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE);
    format.nVersion.nVersion = OMX_VERSION;
    format.nPortIndex = 130;
-   format.eCompressionFormat = OMX_VIDEO_CodingAVC;
+   //format.eCompressionFormat = OMX_VIDEO_CodingAVC;
    //format.eCompressionFormat = OMX_VIDEO_CodingMPEG4;
-   //format.eCompressionFormat = OMX_VIDEO_CodingMPEG2;
+   format.eCompressionFormat = OMX_VIDEO_CodingMPEG2;
    //format.eCompressionFormat = OMX_VIDEO_CodingAutoDetect;
 	
 
@@ -417,8 +404,11 @@ void* tcp_rx_loop(void *arg)
 {
 	(void) arg;
 	int status;
+	int i;
+	uint8_t buffer[16384];
 	uint32_t length;
-	uint8_t buffer[2048];
+	uint8_t video_buffer[16384];
+	uint32_t video_length;
 
 	printf("Attempting to connect to TCP Input %s:%s\n",tcp_rx_params.hostname,tcp_rx_params.port);
 	while((status = ts_tcp_open(tcp_rx_params.hostname, tcp_rx_params.port, tcp_rx_params.ai_family)) < 0)
@@ -430,7 +420,7 @@ void* tcp_rx_loop(void *arg)
 
 	while(1)
 	{
-		length = recv(input_socket, buffer, 2048, 0);
+		length = recv(input_socket, buffer, 16384, 0);
 		if(length==0)
 		{
 			close(input_socket);
@@ -442,9 +432,46 @@ void* tcp_rx_loop(void *arg)
 			}
 			printf("TCP Input re-connected to %s:%s\n",tcp_rx_params.hostname,tcp_rx_params.port);
 		}
-		else if(length<=2048)
+		else if(length<=16384)
 		{
-			rxBufferPush(&rxBuffer, buffer, length);
+			// Extract from TS
+			//printf("TCP Packet received, length: %d bytes\n", length);
+			
+			if(length % 188 != 0)
+			{
+				//fprintf(stderr, "Incoming packet invalid size, expected a multiple of 188 bytes, got %d\n", length);
+				//continue;
+			}
+
+			ts_header_t ts_header;
+			
+			/* Feed in the packet(s) */
+			video_length = 0;
+			for(i = 0; i < length; i += 188)
+			{
+				while(buffer[i] != TS_HEADER_SYNC && i < length)
+				{
+					i++;
+				}
+
+				if((status = ts_parse_header(&ts_header, &buffer[i])) != TS_OK)
+				{
+					//printf("Failed to parse TS Header! (Error: %d)\n", status);
+					continue;
+				}
+
+				if((ts_header.pid == VIDEO_PID) && (ts_header.payload_flag > 0))
+				{
+					memcpy(&video_buffer[video_length],&buffer[i+ts_header.payload_offset], 188 - ts_header.payload_offset);
+					video_length += (188 - ts_header.payload_offset);
+
+				}
+			}
+			if(video_length > 0)
+			{
+				//printf("Pushing to video buffer (%d bytes)\n", video_length);
+				rxBufferPush(&rxBuffer, video_buffer, video_length);
+			}
 			data_received = timestamp();
 		}
 	}
@@ -542,7 +569,6 @@ int main (int argc, char **argv)
 
    	printf("Starting video thread..\n");
    	pthread_create(&video_thread, NULL, &video_loop, NULL);
-   	//status = video_decode_test();
 
    	while(1) {
    		sleep_ms(1000);
@@ -565,5 +591,3 @@ int main (int argc, char **argv)
 
 	return status;
 }
-
-
