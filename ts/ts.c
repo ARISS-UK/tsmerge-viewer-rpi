@@ -218,12 +218,12 @@ void ts_dump_header(ts_header_t *ts)
 		
 		if(ts->pcr_flag)
 		{
-			printf("    PCR %ld:%d\n", ts->pcr_base, ts->pcr_extension);
+			printf("    PCR %lld:%d\n", ts->pcr_base, ts->pcr_extension);
 		}
 		
 		if(ts->opcr_flag)
 		{
-			printf("    OPCR %ld:%d\n", ts->opcr_base, ts->opcr_extension);
+			printf("    OPCR %lld:%d\n", ts->opcr_base, ts->opcr_extension);
 		}
 		
 		if(ts->splicing_point_flag)
