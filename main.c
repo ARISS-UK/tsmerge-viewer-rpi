@@ -48,6 +48,8 @@ rxBuffer_t rxBuffer;
 
 #include "ts/ts.h"
 
+#define TCP_RX_WAIT	4000
+
 #define VIDEO_PID	256
 
 static FILE *input_file;
@@ -89,7 +91,7 @@ static unsigned int ts_read(unsigned char* destination, unsigned int length)
 			return fread(destination, 1, length, input_file);
 
 		case SOURCE_TCP:
-			return rxBufferTimedWaitPop(&rxBuffer, destination, length, 3000);
+			return rxBufferTimedWaitPop(&rxBuffer, destination, length, TCP_RX_WAIT);
 		case SOURCE_NONE:
 		default:
 			return 0;
@@ -207,7 +209,7 @@ void video_play(void)
          unsigned char *dest = buf->pBuffer;
 
          //data_len += fread(dest, 1, buf->nAllocLen-data_len, in);
-         uint32_t data_read = ts_read(dest, buf->nAllocLen-data_len);
+         uint32_t data_read = ts_read(dest, 500); //buf->nAllocLen-data_len);
 
          if(data_read == 0)
          {
