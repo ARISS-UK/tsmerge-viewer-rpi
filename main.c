@@ -384,7 +384,7 @@ static void _print_usage(void)
 {
 	printf(
 		"\n"
-		"Usage: tsplay [options]\n"
+		"Usage: ariss-video [options]\n"
 		"\n"
 		"  -f, --file <name>      Set filename to read from. (conflicts with -h)\n"
 		"  -h, --host <name>      Set the hostname to read data from (conflicts with -f)\n"

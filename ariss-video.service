@@ -5,7 +5,7 @@ After=syslog.target
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/bin/ariss-video
+ExecStart=/usr/bin/ariss-video -h hamtv.batc.tv
 Restart=on-abort
 RestartSec=1
 
