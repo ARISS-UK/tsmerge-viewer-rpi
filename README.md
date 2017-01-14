@@ -36,6 +36,3 @@ make && sudo make install
 
 * Pause on every second
 ** Video appears to otherwise play faster than normal (player is running too fast?)
-
-* Video needs to be forced 16:9
-** This'll be a param for OMX_VIDEO. Find in github.com/popcornmix/omxplayer?

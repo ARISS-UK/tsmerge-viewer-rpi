@@ -52,6 +52,14 @@ rxBuffer_t rxBuffer;
 
 #define VIDEO_PID	256
 
+#define OMX_INIT_STRUCTURE(a) \
+  memset(&(a), 0, sizeof(a)); \
+  (a).nSize = sizeof(a); \
+  (a).nVersion.s.nVersionMajor = OMX_VERSION_MAJOR; \
+  (a).nVersion.s.nVersionMinor = OMX_VERSION_MINOR; \
+  (a).nVersion.s.nRevision = OMX_VERSION_REVISION; \
+  (a).nVersion.s.nStep = OMX_VERSION_STEP
+
 static FILE *input_file;
 static int input_socket;
 
@@ -191,7 +199,29 @@ void video_play(void)
    //format.eCompressionFormat = OMX_VIDEO_CodingMPEG4;
    format.eCompressionFormat = OMX_VIDEO_CodingMPEG2;
    //format.eCompressionFormat = OMX_VIDEO_CodingAutoDetect;
-	
+
+
+   OMX_ERRORTYPE omx_err;
+  OMX_CONFIG_DISPLAYREGIONTYPE configDisplay;
+  OMX_INIT_STRUCTURE(configDisplay);
+  configDisplay.nPortIndex = 90; //m_omx_render.GetInputPort();
+
+  configDisplay.set        = (OMX_DISPLAYSETTYPE)(OMX_DISPLAY_SET_NOASPECT | OMX_DISPLAY_SET_MODE | OMX_DISPLAY_SET_SRC_RECT | OMX_DISPLAY_SET_FULLSCREEN | OMX_DISPLAY_SET_PIXEL);
+  configDisplay.noaspect   = OMX_TRUE;
+  configDisplay.mode       = OMX_DISPLAY_MODE_LETTERBOX;
+
+  configDisplay.src_rect.x_offset   = (int)(0+0.5f);
+  configDisplay.src_rect.y_offset   = (int)(0+0.5f);
+  configDisplay.src_rect.width      = (int)(1920+0.5f);
+  configDisplay.src_rect.height     = (int)(1080+0.5f);
+
+   configDisplay.fullscreen = OMX_TRUE;
+   configDisplay.pixel_x = 0;
+   configDisplay.pixel_y = 0;
+   omx_err = OMX_SetConfig(ILC_GET_HANDLE(video_render), OMX_IndexConfigDisplayRegion, &configDisplay);	
+  if (omx_err != OMX_ErrorNone) {
+    printf("Error setting render display options! omx_err(0x%08x)\n", omx_err);
+  }
 
    if(status == 0 &&
       OMX_SetParameter(ILC_GET_HANDLE(video_decode), OMX_IndexParamVideoPortFormat, &format) == OMX_ErrorNone &&
@@ -233,7 +263,7 @@ void video_play(void)
 
             ilclient_change_component_state(video_scheduler, OMX_StateExecuting);
 
-            // now setup tunnel to video_render
+            // now setup tunnel to video_
             if(ilclient_setup_tunnel(tunnel+1, 0, 1000) != 0)
             {
                status = -12;
