@@ -32,7 +32,19 @@ vim ariss_video.service # Set upstream hostname for connection
 
 make && sudo make install
 
+### /boot/config.txt
+
+#### Force HDMI On (even when screen is not present)
+
+hdmi_force_hotplug=1
+
+#### Force HDMI Mode & Resolution
+
+hdmi_ignore_edid=0xa5000080
+hdmi_group = 1 # CEA
+hdmi_mode = 20 # HDMI_CEA_1080i50
+
 ## Bugs
 
-* Pause on every second
-** Video appears to otherwise play faster than normal (player is running too fast?)
+ * Pause on every second
+ * * Video appears to otherwise play faster than normal (player is running too fast?)
