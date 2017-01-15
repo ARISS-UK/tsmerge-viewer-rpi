@@ -61,4 +61,4 @@ hdmi_mode = 20 # HDMI_CEA_1080i50
 ## Bugs
 
 * Pause on every second
-..* Video appears to otherwise play faster than normal (player is running too fast?)
+  * Video appears to otherwise play faster than normal (player is running too fast?)
