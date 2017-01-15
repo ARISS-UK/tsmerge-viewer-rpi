@@ -39,6 +39,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <getopt.h>
 #include <pthread.h>
 #include <time.h>
+#include <signal.h>
+
+static int terminated;
 
 #include "bcm_host.h"
 #include "ilclient.h"
@@ -76,19 +79,6 @@ static uint64_t timestamp(void) {
   _ts = (uint64_t) spec.tv_sec;
 
   return _ts;
-}
-
-static void sleep_ms(uint32_t _duration)
-{
-    struct timespec req, rem;
-    req.tv_sec = _duration / 1000;
-    req.tv_nsec = (_duration - (req.tv_sec*1000))*1000*1000;
-    
-    while(nanosleep(&req, &rem) == EINTR)
-    {
-        /* Interrupted by signal, shallow copy remaining time into request, and resume */
-        req = rem;
-    }
 }
 
 static unsigned int ts_read(unsigned char* destination, unsigned int length)
@@ -510,9 +500,17 @@ void* tcp_rx_loop(void *arg)
 
 }
 
+void signal_handler(int sig)
+{
+    if (sig == SIGINT || sig == SIGTERM)
+    {
+        terminated = 1;
+    }
+}
+
 int main (int argc, char **argv)
 {
-	int opt,c,status;
+	int opt,c;
 	char *filename = NULL;
 	char *hostname = NULL;
 	char *port = "5679";
@@ -526,6 +524,14 @@ int main (int argc, char **argv)
 		{ "ipv4",        no_argument,       0, '4' },
 		{ 0,             0,                 0,  0  }
 	};
+
+	terminated = 0;
+    if(signal(SIGINT, signal_handler) == SIG_ERR
+     || signal(SIGTERM, signal_handler) == SIG_ERR)
+    {
+        printf("Error setting up signal handler!\n");
+        return 1;
+    }
 
 	opterr = 0;
 	while((c = getopt_long(argc, argv, "f:h:p:64", long_options, &opt)) != -1)
@@ -602,9 +608,7 @@ int main (int argc, char **argv)
    	printf("Starting video thread..\n");
    	pthread_create(&video_thread, NULL, &video_loop, NULL);
 
-   	while(1) {
-   		sleep_ms(1000);
-   	};
+   	while(!terminated) { usleep(100*1000); }
 
    	switch(input_source)
 	{
@@ -621,5 +625,5 @@ int main (int argc, char **argv)
 			break;
 	}
 
-	return status;
+	return 0;
 }
