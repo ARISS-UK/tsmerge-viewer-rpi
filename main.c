@@ -125,7 +125,7 @@ void video_play(void)
 
   if((client = ilclient_init()) == NULL)
   {
-  		printf("Error: Null video client!\n");
+  	printf("Error: Null video client!\n");
     return;
   }
 
@@ -444,7 +444,6 @@ void* tcp_rx_loop(void *arg)
 		}
 		else if(length<=16384)
 		{
-			//printf("Pushing to tcp buffer (%d bytes)\n", length);
 			rxBufferPush(&rxTcpBuffer, buffer, length);
 			data_received = timestamp();
 		}
@@ -459,44 +458,31 @@ void* tcp_buffer_loop(void *arg)
 	uint8_t buffer[16384];
 	uint32_t length;
 	uint8_t video_buffer[16384];
-	uint32_t video_length;
-
+  ts_header_t ts_header;
 
 	while(1)
 	{
 		length = rxBufferWaitTSPop(&rxTcpBuffer, buffer);
 
-		if(length==0)
+		if(length != TS_PACKET_SIZE)
 		{
-			printf("Error reading from TCP TS Buffer!\n");
+			printf("Incoming packet invalid size, expected %d bytes, got %d\n", TS_PACKET_SIZE, length);
+			continue;
 		}
-		else
+
+		/* Feed in the packet(s) */
+		if((status = ts_parse_header(&ts_header, buffer)) != TS_OK)
 		{
-			if(length != 188)
-			{
-				fprintf(stderr, "Incoming packet invalid size, expected 188 bytes, got %d\n", length);
-				continue;
-			}
+			printf("Failed to parse TS Header! (Error: %d)\n", status);
+			continue;
+		}
 
-			ts_header_t ts_header;
-			
-			/* Feed in the packet(s) */
-			video_length = 0;
+		if((ts_header.pid == VIDEO_PID) && (ts_header.payload_flag > 0))
+		{
+			memcpy(video_buffer,&buffer[ts_header.payload_offset], (TS_PACKET_SIZE - ts_header.payload_offset));
 
-			if((status = ts_parse_header(&ts_header, buffer)) != TS_OK)
-			{
-				printf("Failed to parse TS Header! (Error: %d)\n", status);
-				continue;
-			}
-
-			if((ts_header.pid == VIDEO_PID) && (ts_header.payload_flag > 0))
-			{
-				memcpy(&video_buffer[video_length],&buffer[ts_header.payload_offset], 188 - ts_header.payload_offset);
-				video_length += (188 - ts_header.payload_offset);
-
-				//printf("Pushing to video buffer (%d bytes)\n", video_length);
-				rxBufferPush(&rxBuffer, video_buffer, video_length);
-			}
+			//printf("Pushing to video buffer (%d bytes)\n", video_length);
+			rxBufferPush(&rxBuffer, video_buffer, (TS_PACKET_SIZE - ts_header.payload_offset));
 		}
 	}
 }
