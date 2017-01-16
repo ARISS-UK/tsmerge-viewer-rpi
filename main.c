@@ -86,13 +86,13 @@ static unsigned int ts_read(unsigned char* destination, unsigned int length)
 
 		case SOURCE_TCP:
       return rxBufferTimedWaitPop(&rxBuffer, destination, length, TCP_RX_WAIT);
+
 		case SOURCE_NONE:
 		default:
 			return 0;
 	}
 }
 
-//static int video_decode_test(void)
 pthread_t video_thread;
 void video_play(void);
 void* video_loop(void *arg)
@@ -103,10 +103,11 @@ void* video_loop(void *arg)
 
 	while(1)
 	{
-	    while(ts_read(canary_buffer,canary_length) == 0) {};
+	  while(ts_read(canary_buffer,canary_length) == 0) {};
 
-		printf("Starting video playback..\n");
+		printf("Starting video playback.\n");
 		video_play();
+    printf("Stopping video playback.\n");
 	}
 }
 void video_play(void)
@@ -118,7 +119,6 @@ void video_play(void)
   TUNNEL_T tunnel[4];
   ILCLIENT_T *client;
   int status = 0;
-  unsigned int data_len = 0;
 
   memset(list, 0, sizeof(list));
   memset(tunnel, 0, sizeof(tunnel));
@@ -236,8 +236,8 @@ void video_play(void)
          buf->nOffset = 0;
 
          if(port_settings_changed == 0 &&
-            ((data_len > 0 && ilclient_remove_event(video_decode, OMX_EventPortSettingsChanged, 131, 0, 0, 1) == 0) ||
-            (data_len == 0 && ilclient_wait_for_event(video_decode, OMX_EventPortSettingsChanged, 131, 0, 0, 1,
+            ((buf->nFilledLen > 0 && ilclient_remove_event(video_decode, OMX_EventPortSettingsChanged, 131, 0, 0, 1) == 0) ||
+            (buf->nFilledLen == 0 && ilclient_wait_for_event(video_decode, OMX_EventPortSettingsChanged, 131, 0, 0, 1,
             ILCLIENT_EVENT_ERROR | ILCLIENT_PARAMETER_CHANGED, 10000) == 0)))
          {
             port_settings_changed = 1;
@@ -444,6 +444,7 @@ void* tcp_rx_loop(void *arg)
 		}
 		else if(length<=16384)
 		{
+      //printf("Pushing to tcp buffer (%d bytes)\n", length);
 			rxBufferPush(&rxTcpBuffer, buffer, length);
 			data_received = timestamp();
 		}
