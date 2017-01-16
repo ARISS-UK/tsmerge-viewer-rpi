@@ -28,6 +28,7 @@ uint32_t rxBufferLoss(void *buffer_void_ptr);
 void rxBufferPush(void *buffer_void_ptr, uint8_t *data_p, uint32_t length);
 uint32_t rxBufferPop(void *buffer_void_ptr, uint8_t *bufferPtr, uint32_t buffer_length);
 uint32_t rxBufferWaitPop(void *buffer_void_ptr, uint8_t *bufferPtr, uint32_t buffer_length);
+uint32_t rxBufferWaitTSPop(void *buffer_void_ptr, uint8_t *bufferPtr);
 uint32_t rxBufferTimedWaitPop(void *buffer_void_ptr, uint8_t *bufferPtr, uint32_t buffer_length, uint32_t milliseconds);
 
 #endif

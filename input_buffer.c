@@ -5,6 +5,7 @@
 #include <time.h>
 #include <sys/time.h>
 #include "input_buffer.h"
+#include "ts/ts.h"
 
 void rxBufferInit(void *buffer_void_ptr)
 {
@@ -153,6 +154,73 @@ uint32_t rxBufferWaitPop(void *buffer_void_ptr, uint8_t *bufferPtr, uint32_t buf
     }
     
     while(i<buffer_length)
+    {
+        if(buf->Head==buf->Tail)
+        {
+            break;
+        }
+
+        if(buf->Tail==(RX_BUFFER_LENGTH-1))
+            buf->Tail=0;
+        else
+            buf->Tail++;
+
+        bufferPtr[i] = buf->Buffer[buf->Tail];
+        i++;
+    }
+    
+    pthread_mutex_unlock(&buf->Mutex);
+
+    return i;
+}
+
+uint32_t rxBufferWaitTSPop(void *buffer_void_ptr, uint8_t *bufferPtr)
+{
+    uint32_t i = 0;
+    rxBuffer_t *buf;
+    buf = (rxBuffer_t *)buffer_void_ptr;
+    
+    pthread_mutex_lock(&buf->Mutex);
+    
+    /* Wait for data in buffer */
+    while(buf->Head==buf->Tail || buf->Buffer[buf->Tail] != TS_HEADER_SYNC)
+    {
+        if(buf->Head==buf->Tail)
+        {
+            /* Mutex is atomically unlocked on beginning waiting for signal */
+            pthread_cond_wait(&buf->Signal, &buf->Mutex);
+            /* and locked again on resumption */
+        }
+
+        /* Consume data from buffer until it's empty or we find TS_HEADER_SYNC byte */
+        while(buf->Head!=buf->Tail)
+        {
+            if(buf->Tail==(RX_BUFFER_LENGTH-1))
+                buf->Tail=0;
+            else
+                buf->Tail++;
+
+            if(buf->Buffer[buf->Tail] == TS_HEADER_SYNC)
+            {
+                break;
+            }
+        }
+    }
+
+    /* Wait for TS_PACKET_SIZE bytes following the sync bytes */
+    while(((buf->Head > buf->Tail) && (buf->Head < buf->Tail + TS_PACKET_SIZE))
+        || ((buf->Head < buf->Tail) && ((int)buf->Head < (int)buf->Tail + TS_PACKET_SIZE - RX_BUFFER_LENGTH)))
+    {
+        /* Mutex is atomically unlocked on beginning waiting for signal */
+        pthread_cond_wait(&buf->Signal, &buf->Mutex);
+        /* and locked again on resumption */
+    }
+    
+    i = 0;
+    bufferPtr[i] = buf->Buffer[buf->Tail];
+    i++;
+
+    while(i < TS_PACKET_SIZE)
     {
         if(buf->Head==buf->Tail)
         {

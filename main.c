@@ -48,6 +48,7 @@ static int terminated;
 
 #include "input_buffer.h"
 rxBuffer_t rxBuffer;
+rxBuffer_t rxTcpBuffer;
 
 #include "ts/ts.h"
 
@@ -55,13 +56,8 @@ rxBuffer_t rxBuffer;
 
 #define VIDEO_PID	256
 
-#define OMX_INIT_STRUCTURE(a) \
-  memset(&(a), 0, sizeof(a)); \
-  (a).nSize = sizeof(a); \
-  (a).nVersion.s.nVersionMajor = OMX_VERSION_MAJOR; \
-  (a).nVersion.s.nVersionMinor = OMX_VERSION_MINOR; \
-  (a).nVersion.s.nRevision = OMX_VERSION_REVISION; \
-  (a).nVersion.s.nStep = OMX_VERSION_STEP
+#define SCREEN_RESOLUTION_HEIGHT  1080
+#define SCREEN_RESOLUTION_WIDTH   1920
 
 static FILE *input_file;
 static int input_socket;
@@ -89,7 +85,7 @@ static unsigned int ts_read(unsigned char* destination, unsigned int length)
 			return fread(destination, 1, length, input_file);
 
 		case SOURCE_TCP:
-			return rxBufferTimedWaitPop(&rxBuffer, destination, length, TCP_RX_WAIT);
+      return rxBufferTimedWaitPop(&rxBuffer, destination, length, TCP_RX_WAIT);
 		case SOURCE_NONE:
 		default:
 			return 0;
@@ -115,85 +111,90 @@ void* video_loop(void *arg)
 }
 void video_play(void)
 {
-   OMX_VIDEO_PARAM_PORTFORMATTYPE format;
-   OMX_TIME_CONFIG_CLOCKSTATETYPE cstate;
-   COMPONENT_T *video_decode = NULL, *video_scheduler = NULL, *video_render = NULL, *clock = NULL;
-   COMPONENT_T *list[5];
-   TUNNEL_T tunnel[4];
-   ILCLIENT_T *client;
-   int status = 0;
-   unsigned int data_len = 0;
+  OMX_VIDEO_PARAM_PORTFORMATTYPE format;
+  OMX_TIME_CONFIG_CLOCKSTATETYPE cstate;
+  COMPONENT_T *video_decode = NULL, *video_scheduler = NULL, *video_render = NULL, *clock = NULL;
+  COMPONENT_T *list[5];
+  TUNNEL_T tunnel[4];
+  ILCLIENT_T *client;
+  int status = 0;
+  unsigned int data_len = 0;
 
-   memset(list, 0, sizeof(list));
-   memset(tunnel, 0, sizeof(tunnel));
+  memset(list, 0, sizeof(list));
+  memset(tunnel, 0, sizeof(tunnel));
 
-   if((client = ilclient_init()) == NULL)
-   {
-   		printf("Error: Null video client!\n");
-      return;
-   }
+  if((client = ilclient_init()) == NULL)
+  {
+  		printf("Error: Null video client!\n");
+    return;
+  }
 
-   if(OMX_Init() != OMX_ErrorNone)
-   {
-      ilclient_destroy(client);
-   		printf("Error: OMX Init failed!\n");
-      return;
-   }
+  if(OMX_Init() != OMX_ErrorNone)
+  {
+    ilclient_destroy(client);
+  		printf("Error: OMX Init failed!\n");
+    return;
+  }
 
-   // create video_decode
-   if(ilclient_create_component(client, &video_decode, "video_decode", ILCLIENT_DISABLE_ALL_PORTS | ILCLIENT_ENABLE_INPUT_BUFFERS) != 0)
-      status = -14;
-   list[0] = video_decode;
+  // create video_decode
+  if(ilclient_create_component(client, &video_decode, "video_decode", ILCLIENT_DISABLE_ALL_PORTS | ILCLIENT_ENABLE_INPUT_BUFFERS) != 0)
+    status = -14;
+  list[0] = video_decode;
 
-   // create video_render
-   if(status == 0 && ilclient_create_component(client, &video_render, "video_render", ILCLIENT_DISABLE_ALL_PORTS) != 0)
-      status = -14;
-   list[1] = video_render;
+  // create video_render
+  if(status == 0 && ilclient_create_component(client, &video_render, "video_render", ILCLIENT_DISABLE_ALL_PORTS) != 0)
+    status = -14;
+  list[1] = video_render;
 
-   // create clock
-   if(status == 0 && ilclient_create_component(client, &clock, "clock", ILCLIENT_DISABLE_ALL_PORTS) != 0)
-      status = -14;
-   list[2] = clock;
+  // create clock
+  if(status == 0 && ilclient_create_component(client, &clock, "clock", ILCLIENT_DISABLE_ALL_PORTS) != 0)
+    status = -14;
+  list[2] = clock;
 
-   memset(&cstate, 0, sizeof(cstate));
-   cstate.nSize = sizeof(cstate);
-   cstate.nVersion.nVersion = OMX_VERSION;
-   cstate.eState = OMX_TIME_ClockStateWaitingForStartTime;
-   cstate.nWaitMask = 1;
-   if(clock != NULL && OMX_SetParameter(ILC_GET_HANDLE(clock), OMX_IndexConfigTimeClockState, &cstate) != OMX_ErrorNone)
-      status = -13;
+  memset(&cstate, 0, sizeof(cstate));
+  cstate.nSize = sizeof(cstate);
+  cstate.nVersion.nVersion = OMX_VERSION;
+  cstate.eState = OMX_TIME_ClockStateWaitingForStartTime;
+  cstate.nWaitMask = 1;
+  if(clock != NULL && OMX_SetParameter(ILC_GET_HANDLE(clock), OMX_IndexConfigTimeClockState, &cstate) != OMX_ErrorNone)
+    status = -13;
 
-   // create video_scheduler
-   if(status == 0 && ilclient_create_component(client, &video_scheduler, "video_scheduler", ILCLIENT_DISABLE_ALL_PORTS) != 0)
-      status = -14;
-   list[3] = video_scheduler;
+  // create video_scheduler
+  if(status == 0 && ilclient_create_component(client, &video_scheduler, "video_scheduler", ILCLIENT_DISABLE_ALL_PORTS) != 0)
+    status = -14;
+  list[3] = video_scheduler;
 
-   set_tunnel(tunnel, video_decode, 131, video_scheduler, 10);
-   set_tunnel(tunnel+1, video_scheduler, 11, video_render, 90);
-   set_tunnel(tunnel+2, clock, 80, video_scheduler, 12);
+  set_tunnel(tunnel, video_decode, 131, video_scheduler, 10);
+  set_tunnel(tunnel+1, video_scheduler, 11, video_render, 90);
+  set_tunnel(tunnel+2, clock, 80, video_scheduler, 12);
 
-   // setup clock tunnel first
-   if(status == 0 && ilclient_setup_tunnel(tunnel+2, 0, 0) != 0)
-      status = -15;
-   else
-      ilclient_change_component_state(clock, OMX_StateExecuting);
+  // setup clock tunnel first
+  if(status == 0 && ilclient_setup_tunnel(tunnel+2, 0, 0) != 0)
+    status = -15;
+  else
+    ilclient_change_component_state(clock, OMX_StateExecuting);
 
-   if(status == 0)
-      ilclient_change_component_state(video_decode, OMX_StateIdle);
+  if(status == 0)
+    ilclient_change_component_state(video_decode, OMX_StateIdle);
 
-   memset(&format, 0, sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE));
-   format.nSize = sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE);
-   format.nVersion.nVersion = OMX_VERSION;
-   format.nPortIndex = 130;
-   //format.eCompressionFormat = OMX_VIDEO_CodingAVC;
-   //format.eCompressionFormat = OMX_VIDEO_CodingMPEG4;
-   format.eCompressionFormat = OMX_VIDEO_CodingMPEG2;
-   //format.eCompressionFormat = OMX_VIDEO_CodingAutoDetect;
+  memset(&format, 0, sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE));
+  format.nSize = sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE);
+  format.nVersion.nVersion = OMX_VERSION;
+  format.nPortIndex = 130;
+  //format.eCompressionFormat = OMX_VIDEO_CodingAVC;
+  //format.eCompressionFormat = OMX_VIDEO_CodingMPEG4;
+  format.eCompressionFormat = OMX_VIDEO_CodingMPEG2;
+  //format.eCompressionFormat = OMX_VIDEO_CodingAutoDetect;
 
-
-   OMX_ERRORTYPE omx_err;
+  /* Set fullscreen 1080x1920, forced aspect ratio */
+  OMX_ERRORTYPE omx_err;
   OMX_CONFIG_DISPLAYREGIONTYPE configDisplay;
-  OMX_INIT_STRUCTURE(configDisplay);
+  memset(&configDisplay, 0, sizeof(configDisplay));
+  configDisplay.nSize = sizeof(configDisplay);
+  configDisplay.nVersion.s.nVersionMajor = OMX_VERSION_MAJOR;
+  configDisplay.nVersion.s.nVersionMinor = OMX_VERSION_MINOR;
+  configDisplay.nVersion.s.nRevision = OMX_VERSION_REVISION;
+  configDisplay.nVersion.s.nStep = OMX_VERSION_STEP;
   configDisplay.nPortIndex = 90; //m_omx_render.GetInputPort();
 
   configDisplay.set        = (OMX_DISPLAYSETTYPE)(OMX_DISPLAY_SET_NOASPECT | OMX_DISPLAY_SET_MODE | OMX_DISPLAY_SET_SRC_RECT | OMX_DISPLAY_SET_FULLSCREEN | OMX_DISPLAY_SET_PIXEL);
@@ -202,21 +203,22 @@ void video_play(void)
 
   configDisplay.src_rect.x_offset   = (int)(0+0.5f);
   configDisplay.src_rect.y_offset   = (int)(0+0.5f);
-  configDisplay.src_rect.width      = (int)(1920+0.5f);
-  configDisplay.src_rect.height     = (int)(1080+0.5f);
+  configDisplay.src_rect.width      = (int)(SCREEN_RESOLUTION_WIDTH+0.5f);
+  configDisplay.src_rect.height     = (int)(SCREEN_RESOLUTION_HEIGHT+0.5f);
 
-   configDisplay.fullscreen = OMX_TRUE;
-   configDisplay.pixel_x = 0;
-   configDisplay.pixel_y = 0;
-   omx_err = OMX_SetConfig(ILC_GET_HANDLE(video_render), OMX_IndexConfigDisplayRegion, &configDisplay);	
-  if (omx_err != OMX_ErrorNone) {
+  configDisplay.fullscreen = OMX_TRUE;
+  configDisplay.pixel_x = 0;
+  configDisplay.pixel_y = 0;
+  omx_err = OMX_SetConfig(ILC_GET_HANDLE(video_render), OMX_IndexConfigDisplayRegion, &configDisplay);	
+  if (omx_err != OMX_ErrorNone)
+  {
     printf("Error setting render display options! omx_err(0x%08x)\n", omx_err);
   }
 
-   if(status == 0 &&
-      OMX_SetParameter(ILC_GET_HANDLE(video_decode), OMX_IndexParamVideoPortFormat, &format) == OMX_ErrorNone &&
-      ilclient_enable_port_buffers(video_decode, 130, NULL, NULL, NULL) == 0)
-   {
+  if(status == 0 &&
+    OMX_SetParameter(ILC_GET_HANDLE(video_decode), OMX_IndexParamVideoPortFormat, &format) == OMX_ErrorNone &&
+    ilclient_enable_port_buffers(video_decode, 130, NULL, NULL, NULL) == 0)
+  {
       OMX_BUFFERHEADERTYPE *buf;
       int port_settings_changed = 0;
       int first_packet = 1;
@@ -226,22 +228,17 @@ void video_play(void)
       while((buf = ilclient_get_input_buffer(video_decode, 130, 1)) != NULL)
       {
          // feed data and wait until we get port settings changed
-         unsigned char *dest = buf->pBuffer;
+         buf->nFilledLen = ts_read(buf->pBuffer, buf->nAllocLen);
 
-         //data_len += fread(dest, 1, buf->nAllocLen-data_len, in);
-         uint32_t data_read = ts_read(dest, 500); //buf->nAllocLen-data_len);
+         if(buf->nFilledLen == 0)
+            break;
 
-         if(data_read == 0)
-         {
-         	break;
-         }
-
-         data_len += data_read;
+         buf->nOffset = 0;
 
          if(port_settings_changed == 0 &&
             ((data_len > 0 && ilclient_remove_event(video_decode, OMX_EventPortSettingsChanged, 131, 0, 0, 1) == 0) ||
-             (data_len == 0 && ilclient_wait_for_event(video_decode, OMX_EventPortSettingsChanged, 131, 0, 0, 1,
-                                                       ILCLIENT_EVENT_ERROR | ILCLIENT_PARAMETER_CHANGED, 10000) == 0)))
+            (data_len == 0 && ilclient_wait_for_event(video_decode, OMX_EventPortSettingsChanged, 131, 0, 0, 1,
+            ILCLIENT_EVENT_ERROR | ILCLIENT_PARAMETER_CHANGED, 10000) == 0)))
          {
             port_settings_changed = 1;
 
@@ -262,13 +259,7 @@ void video_play(void)
 
             ilclient_change_component_state(video_render, OMX_StateExecuting);
          }
-         if(!data_len)
-            break;
 
-         buf->nFilledLen = data_len;
-         data_len = 0;
-
-         buf->nOffset = 0;
          if(first_packet)
          {
             buf->nFlags = OMX_BUFFERFLAG_STARTTIME;
@@ -297,31 +288,31 @@ void video_play(void)
       // need to flush the renderer to allow video_decode to disable its input port
       ilclient_flush_tunnels(tunnel, 0);
 
-   }
+  }
 
-   ilclient_disable_tunnel(tunnel);
-   ilclient_disable_tunnel(tunnel+1);
-   ilclient_disable_tunnel(tunnel+2);
-   ilclient_disable_port_buffers(video_decode, 130, NULL, NULL, NULL);
-   ilclient_teardown_tunnels(tunnel);
+  ilclient_disable_tunnel(tunnel);
+  ilclient_disable_tunnel(tunnel+1);
+  ilclient_disable_tunnel(tunnel+2);
+  ilclient_disable_port_buffers(video_decode, 130, NULL, NULL, NULL);
+  ilclient_teardown_tunnels(tunnel);
 
-   ilclient_state_transition(list, OMX_StateIdle);
-   ilclient_state_transition(list, OMX_StateLoaded);
+  ilclient_state_transition(list, OMX_StateIdle);
+  ilclient_state_transition(list, OMX_StateLoaded);
 
-   ilclient_cleanup_components(list);
+  ilclient_cleanup_components(list);
 
-   OMX_Deinit();
+  OMX_Deinit();
 
-   ilclient_destroy(client);
-   return;
+  ilclient_destroy(client);
+  return;
 }
 
 static int ts_file_open(char* filename)
 {
-	if((input_file = fopen(filename, "rb")) == NULL)
-      	return -1;
-  	else
-  		return 0;
+  if((input_file = fopen(filename, "rb")) == NULL)
+	 return -1;
+  else
+    return 0;
 }
 
 static int ts_tcp_open(char *hostname, char *port, int ai_family)
@@ -392,12 +383,12 @@ static int ts_tcp_open(char *hostname, char *port, int ai_family)
 
 	int value = 1;
 	if (setsockopt(input_socket, IPPROTO_TCP, TCP_NODELAY, (char *)&value, sizeof(int)) < 0)
-      return -2;
+    return -2;
 
 	if(input_socket < 0)
 		return -1;
 	else
-  		return 0;
+		return 0;
 }
 
 static void _print_usage(void)
@@ -426,11 +417,8 @@ void* tcp_rx_loop(void *arg)
 {
 	(void) arg;
 	int status;
-	int i;
 	uint8_t buffer[16384];
 	uint32_t length;
-	uint8_t video_buffer[16384];
-	uint32_t video_length;
 
 	printf("Attempting to connect to TCP Input %s:%s\n",tcp_rx_params.hostname,tcp_rx_params.port);
 	while((status = ts_tcp_open(tcp_rx_params.hostname, tcp_rx_params.port, tcp_rx_params.ai_family)) < 0)
@@ -456,48 +444,61 @@ void* tcp_rx_loop(void *arg)
 		}
 		else if(length<=16384)
 		{
-			// Extract from TS
-			//printf("TCP Packet received, length: %d bytes\n", length);
-			
-			if(length % 188 != 0)
+			//printf("Pushing to tcp buffer (%d bytes)\n", length);
+			rxBufferPush(&rxTcpBuffer, buffer, length);
+			data_received = timestamp();
+		}
+	}
+}
+
+pthread_t tcp_buffer_thread;
+void* tcp_buffer_loop(void *arg)
+{
+	(void) arg;
+	int status;
+	uint8_t buffer[16384];
+	uint32_t length;
+	uint8_t video_buffer[16384];
+	uint32_t video_length;
+
+
+	while(1)
+	{
+		length = rxBufferWaitTSPop(&rxTcpBuffer, buffer);
+
+		if(length==0)
+		{
+			printf("Error reading from TCP TS Buffer!\n");
+		}
+		else
+		{
+			if(length != 188)
 			{
-				//fprintf(stderr, "Incoming packet invalid size, expected a multiple of 188 bytes, got %d\n", length);
-				//continue;
+				fprintf(stderr, "Incoming packet invalid size, expected 188 bytes, got %d\n", length);
+				continue;
 			}
 
 			ts_header_t ts_header;
 			
 			/* Feed in the packet(s) */
 			video_length = 0;
-			for(i = 0; i < length; i += 188)
+
+			if((status = ts_parse_header(&ts_header, buffer)) != TS_OK)
 			{
-				while(buffer[i] != TS_HEADER_SYNC && i < length)
-				{
-					i++;
-				}
-
-				if((status = ts_parse_header(&ts_header, &buffer[i])) != TS_OK)
-				{
-					//printf("Failed to parse TS Header! (Error: %d)\n", status);
-					continue;
-				}
-
-				if((ts_header.pid == VIDEO_PID) && (ts_header.payload_flag > 0))
-				{
-					memcpy(&video_buffer[video_length],&buffer[i+ts_header.payload_offset], 188 - ts_header.payload_offset);
-					video_length += (188 - ts_header.payload_offset);
-
-				}
+				printf("Failed to parse TS Header! (Error: %d)\n", status);
+				continue;
 			}
-			if(video_length > 0)
+
+			if((ts_header.pid == VIDEO_PID) && (ts_header.payload_flag > 0))
 			{
+				memcpy(&video_buffer[video_length],&buffer[ts_header.payload_offset], 188 - ts_header.payload_offset);
+				video_length += (188 - ts_header.payload_offset);
+
 				//printf("Pushing to video buffer (%d bytes)\n", video_length);
 				rxBufferPush(&rxBuffer, video_buffer, video_length);
 			}
-			data_received = timestamp();
 		}
 	}
-
 }
 
 void signal_handler(int sig)
@@ -589,10 +590,15 @@ int main (int argc, char **argv)
 
 		case SOURCE_TCP:
 			rxBufferInit(&rxBuffer);
+			rxBufferInit(&rxTcpBuffer);
+
 			tcp_rx_params.hostname = hostname;
 			tcp_rx_params.port = port;
 			tcp_rx_params.ai_family = ai_family;
     		pthread_create(&tcp_rx_thread, NULL, &tcp_rx_loop, NULL);
+
+    		pthread_create(&tcp_buffer_thread, NULL, &tcp_buffer_loop, NULL);
+
 			break;
 
 		case SOURCE_NONE:
@@ -614,12 +620,10 @@ int main (int argc, char **argv)
 	{
 		case SOURCE_FILE:
 			fclose(input_file);
-			printf("File Input closed.\n");
 			break;
 
 		case SOURCE_TCP:
 			close(input_socket);
-			printf("TCP Input closed\n");
 			break;
 		case SOURCE_NONE:
 			break;
