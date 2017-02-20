@@ -210,6 +210,7 @@ void video_play(void)
   configDisplay.fullscreen = OMX_TRUE;
   configDisplay.pixel_x = 0;
   configDisplay.pixel_y = 0;
+  configDisplay.layer = 1;
   omx_err = OMX_SetConfig(ILC_GET_HANDLE(video_render), OMX_IndexConfigDisplayRegion, &configDisplay);	
   if (omx_err != OMX_ErrorNone)
   {
