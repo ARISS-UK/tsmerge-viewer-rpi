@@ -190,7 +190,7 @@ int ts_parse_header(ts_header_t *ts, uint8_t * const data)
 
 void ts_dump_header(ts_header_t *ts)
 {
-	printf("TS: Sync 0x%02X TEI %d PUSI %d TP %i PID %4d SC %2d AFF %d PF %d CC %2d\n",
+	printf("TS: Sync 0x%02X TEI %d PUSI %d TP %i PID %4d SC %2d AFF %d PF %d PFO %d CC %2d\n",
 		ts->sync_byte,
 		ts->transport_error_indicator,
 		ts->payload_unit_start_indicator,
@@ -199,6 +199,7 @@ void ts_dump_header(ts_header_t *ts)
 		ts->scrambling_control,
 		ts->adaptation_field_flag,
 		ts->payload_flag,
+		ts->payload_offset,
 		ts->continuity_counter
 	);
 	

@@ -77,6 +77,18 @@ static uint64_t timestamp(void) {
   return _ts;
 }
 
+uint64_t previous_ms = 0; // DEBUG
+static uint64_t timestamp_ms(void) {
+  uint64_t _ts = 0;
+  
+  struct timespec spec;
+  clock_gettime(CLOCK_REALTIME, &spec);
+  _ts = ((uint64_t) spec.tv_sec) * 1000;
+  _ts = _ts + (((uint64_t) spec.tv_nsec) / 1000000);
+
+  return _ts;
+}
+
 static unsigned int ts_read(unsigned char* destination, unsigned int length)
 {
 	switch(input_source)
@@ -185,6 +197,7 @@ void video_play(void)
   //format.eCompressionFormat = OMX_VIDEO_CodingMPEG4;
   format.eCompressionFormat = OMX_VIDEO_CodingMPEG2;
   //format.eCompressionFormat = OMX_VIDEO_CodingAutoDetect;
+  format.xFramerate = 30 * (1<<16);
 
   /* Set fullscreen 1080x1920, forced aspect ratio */
   OMX_ERRORTYPE omx_err;
@@ -266,7 +279,10 @@ void video_play(void)
             first_packet = 0;
          }
          else
-            buf->nFlags = OMX_BUFFERFLAG_TIME_UNKNOWN;
+         {
+            //buf->nFlags = OMX_BUFFERFLAG_TIME_UNKNOWN;
+            //buf->nFlags = OMX_BUFFERFLAG_TIME_IS_DTS;
+         }
 
          if(OMX_EmptyThisBuffer(ILC_GET_HANDLE(video_decode), buf) != OMX_ErrorNone)
          {
@@ -478,13 +494,41 @@ void* tcp_buffer_loop(void *arg)
 			continue;
 		}
 
-		if((ts_header.pid == VIDEO_PID) && (ts_header.payload_flag > 0))
+		if((ts_header.pid == VIDEO_PID) && (ts_header.payload_flag == 1))
 		{
+      ts_dump_header(&ts_header);
+      
+      if((timestamp_ms() - previous_ms) > 50)
+      {
+        printf("TIME: %lld\n",timestamp_ms() - previous_ms);
+      }
+      previous_ms = timestamp_ms();
+      /*
+
+      if(ts_header.payload_unit_start_indicator)
+      {
+      printf("===== VIDEO PACKET ===== \n");
+      printf("DATA: %02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X\n",
+        buffer[ts_header.payload_offset],
+        buffer[ts_header.payload_offset+1],
+        buffer[ts_header.payload_offset+2],
+        buffer[ts_header.payload_offset+3],
+        buffer[ts_header.payload_offset+4],
+        buffer[ts_header.payload_offset+5],
+        buffer[ts_header.payload_offset+6],
+        buffer[ts_header.payload_offset+7],
+        buffer[ts_header.payload_offset+8],
+        buffer[ts_header.payload_offset+9],
+        buffer[ts_header.payload_offset+10],
+        buffer[ts_header.payload_offset+11]);
+    }
+*/
 			memcpy(video_buffer,&buffer[ts_header.payload_offset], (TS_PACKET_SIZE - ts_header.payload_offset));
 
-			//printf("Pushing to video buffer (%d bytes)\n", video_length);
+			//printf("Pushing to video buffer (%d bytes)\n", (TS_PACKET_SIZE - ts_header.payload_offset));
 			rxBufferPush(&rxBuffer, video_buffer, (TS_PACKET_SIZE - ts_header.payload_offset));
 		}
+    //ts_dump_header(&ts_header);
 	}
 }
 
