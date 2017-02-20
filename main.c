@@ -185,6 +185,7 @@ void video_play(void)
   //format.eCompressionFormat = OMX_VIDEO_CodingMPEG4;
   format.eCompressionFormat = OMX_VIDEO_CodingMPEG2;
   //format.eCompressionFormat = OMX_VIDEO_CodingAutoDetect;
+  format.xFramerate = 29.97 * (1<<16);
 
   /* Set fullscreen 1080x1920, forced aspect ratio */
   OMX_ERRORTYPE omx_err;
