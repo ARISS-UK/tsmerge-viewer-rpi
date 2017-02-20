@@ -43,6 +43,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 static int terminated;
 
+#include "backgroundLayer.h"
+#include "imageLayer.h"
+#include "key.h"
+#include "loadpng.h"
+#include "bcm_host.h"
+
 #include "bcm_host.h"
 #include "ilclient.h"
 
@@ -93,22 +99,62 @@ static unsigned int ts_read(unsigned char* destination, unsigned int length)
 	}
 }
 
+#define OVERLAY_PNG_PATH 	"stream-overlay.png"
+#define OVERLAY_DISPLAY_NUM	2
+#define OVERLAY_LAYER_NUM	1
+#define OVERLAY_LAYER_X		(1*(SCREEN_RESOLUTION_WIDTH-800)/25)
+#define OVERLAY_LAYER_Y		(24*(SCREEN_RESOLUTION_HEIGHT-200)/25)
+
 pthread_t video_thread;
 void video_play(void);
 void* video_loop(void *arg)
 {
-	(void) arg;
-	uint32_t canary_length = 1;
-	uint8_t canary_buffer[1];
+  (void) arg;
+  uint32_t canary_length = 1;
+  uint8_t canary_buffer[1];
 
-	while(1)
-	{
-	  while(ts_read(canary_buffer,canary_length) == 0) {};
+  while(1)
+  {
+    
+    while(ts_read(canary_buffer,canary_length) == 0) {};
 
-		printf("Starting video playback.\n");
-		video_play();
+    printf("Starting video playback.\n");
+    DISPMANX_MODEINFO_T overlay_info;
+    IMAGE_LAYER_T overlay_imageLayer;
+    DISPMANX_DISPLAY_HANDLE_T overlay_display = vc_dispmanx_display_open(OVERLAY_DISPLAY_NUM);
+    if(overlay_display == 0)
+    {
+      fprintf(stderr,"Error opening dispmanx display\n");
+    }
+    if(vc_dispmanx_display_get_info(overlay_display, &overlay_info) != 0)
+    {
+      fprintf(stderr, "Error loading dispmanx display info.\n");
+    }
+    if (loadPng(&(overlay_imageLayer.image), OVERLAY_PNG_PATH) == false)
+    {
+      fprintf(stderr, "Error loading overlay png:"OVERLAY_PNG_PATH"\n");
+    }
+    createResourceImageLayer(&overlay_imageLayer, OVERLAY_LAYER_NUM);
+    DISPMANX_UPDATE_HANDLE_T overlay_update = vc_dispmanx_update_start(0);
+    if(overlay_update == 0)
+    {
+      fprintf(stderr, "Error creating overlay update handle\n");
+    }
+    addElementImageLayerOffset(&overlay_imageLayer, OVERLAY_LAYER_X, OVERLAY_LAYER_Y, overlay_display, overlay_update);
+    if(vc_dispmanx_update_submit_sync(overlay_update) != 0)
+    {
+      fprintf(stderr, "Error updating overlay image with offsets\n");
+    }
+    
+    video_play();
+
     printf("Stopping video playback.\n");
-	}
+    destroyImageLayer(&overlay_imageLayer);
+    if(vc_dispmanx_display_close(overlay_display) != 0)
+    {
+      fprintf(stderr, "Error closing dispmanx display\n");
+    }
+  }
 }
 void video_play(void)
 {

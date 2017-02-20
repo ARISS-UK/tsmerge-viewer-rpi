@@ -13,6 +13,15 @@ LDFLAGS+=-L$(SDKSTAGE)/opt/vc/lib/ -lGLESv2 -lEGL -lopenmaxil -lbcm_host -lvcos 
 
 INCLUDES+=-I/opt/vc/include -I/opt/vc/include/interface/vmcs_host/linux -I/opt/vc/include/interface/vcos/pthreads -I$(SDKSTAGE)/opt/vc/include/ -I$(SDKSTAGE)/opt/vc/include/interface/vcos/pthreads -I$(SDKSTAGE)/opt/vc/include/interface/vmcs_host/linux -I./ -I$(SDKSTAGE)/opt/vc/src/hello_pi/libs/ilclient -I$(SDKSTAGE)/opt/vc/src/hello_pi/libs/vgfont
 
+
+OBJS+= raspidmx/common/backgroundLayer.o raspidmx/common/imageLayer.o raspidmx/common/loadpng.o raspidmx/common/image.o raspidmx/common/key.o
+
+CFLAGS+=-Iraspidmx/common $(shell libpng-config --cflags)
+
+LDFLAGS+=-L/opt/vc/lib/ -lbcm_host -lm $(shell libpng-config --ldflags)
+
+INCLUDES+=-I/opt/vc/include/ -I/opt/vc/include/interface/vcos/pthreads -I/opt/vc/include/interface/vmcs_host/linux
+
 all: $(OBJS)
 	$(CC) -g -gdwarf-3 -Og -o $(BIN) -Wl,--whole-archive $(OBJS) $(LDFLAGS) -Wl,--no-whole-archive -rdynamic
 

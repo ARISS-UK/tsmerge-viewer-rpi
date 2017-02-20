@@ -1,3 +1,6 @@
 [submodule "openvg"]
 	path = openvg
 	url = https://github.com/ajstarks/openvg.git
+[submodule "raspidmx"]
+	path = raspidmx
+	url = https://github.com/AndrewFromMelbourne/raspidmx.git
