@@ -71,6 +71,14 @@ static int input_socket;
 enum input_source_t {SOURCE_TCP, SOURCE_FILE, SOURCE_NONE};
 static enum input_source_t input_source = SOURCE_NONE;
 
+static inline OMX_TICKS ToOMXTime(int64_t pts)
+{
+  OMX_TICKS ticks;
+  ticks.nLowPart = pts;
+  ticks.nHighPart = pts >> 32;
+  return ticks;
+}
+
 static uint64_t data_received = 0;
 
 static uint64_t timestamp(void) {
@@ -158,6 +166,7 @@ void* video_loop(void *arg)
 }
 void video_play(void)
 {
+  OMX_ERRORTYPE omx_err;
   OMX_VIDEO_PARAM_PORTFORMATTYPE format;
   OMX_TIME_CONFIG_CLOCKSTATETYPE cstate;
   COMPONENT_T *video_decode = NULL, *video_scheduler = NULL, *video_render = NULL, *clock = NULL;
@@ -205,6 +214,20 @@ void video_play(void)
   if(clock != NULL && OMX_SetParameter(ILC_GET_HANDLE(clock), OMX_IndexConfigTimeClockState, &cstate) != OMX_ErrorNone)
     status = -13;
 
+  OMX_TIME_CONFIG_ACTIVEREFCLOCKTYPE refClock;
+  memset(&refClock, 0, sizeof(refClock));
+  refClock.nSize = sizeof(refClock);
+  refClock.nVersion.s.nVersionMajor = OMX_VERSION_MAJOR;
+  refClock.nVersion.s.nVersionMinor = OMX_VERSION_MINOR;
+  refClock.nVersion.s.nRevision = OMX_VERSION_REVISION;
+  refClock.nVersion.s.nStep = OMX_VERSION_STEP;
+  refClock.eClock = OMX_TIME_RefClockVideo;
+  omx_err = OMX_SetConfig(ILC_GET_HANDLE(clock), OMX_IndexConfigTimeActiveRefClock, &refClock);
+  if (omx_err != OMX_ErrorNone)
+  {
+    printf("Error setting reference clock! omx_err(0x%08x)\n", omx_err);
+  }
+
   // create video_scheduler
   if(status == 0 && ilclient_create_component(client, &video_scheduler, "video_scheduler", ILCLIENT_DISABLE_ALL_PORTS) != 0)
     status = -14;
@@ -234,7 +257,6 @@ void video_play(void)
   format.xFramerate = 29.97 * (1<<16);
 
   /* Set fullscreen 1080x1920, forced aspect ratio */
-  OMX_ERRORTYPE omx_err;
   OMX_CONFIG_DISPLAYREGIONTYPE configDisplay;
   memset(&configDisplay, 0, sizeof(configDisplay));
   configDisplay.nSize = sizeof(configDisplay);
@@ -261,6 +283,28 @@ void video_play(void)
   if (omx_err != OMX_ErrorNone)
   {
     printf("Error setting render display options! omx_err(0x%08x)\n", omx_err);
+  }
+
+  OMX_CONFIG_LATENCYTARGETTYPE latencyTarget;
+  memset(&latencyTarget, 0, sizeof(latencyTarget));
+  latencyTarget.nSize = sizeof(latencyTarget);
+  latencyTarget.nVersion.s.nVersionMajor = OMX_VERSION_MAJOR;
+  latencyTarget.nVersion.s.nVersionMinor = OMX_VERSION_MINOR;
+  latencyTarget.nVersion.s.nRevision = OMX_VERSION_REVISION;
+  latencyTarget.nVersion.s.nStep = OMX_VERSION_STEP;
+  latencyTarget.nPortIndex = 90; //m_omx_render.GetInputPort();
+  latencyTarget.bEnabled = OMX_TRUE;
+  latencyTarget.nFilter = 2;
+  latencyTarget.nTarget = 8000;
+  latencyTarget.nShift = 3;
+  latencyTarget.nSpeedFactor = -135;
+  latencyTarget.nInterFactor = 500;
+  latencyTarget.nAdjCap = 20;
+
+  omx_err = OMX_SetConfig(ILC_GET_HANDLE(video_render), OMX_IndexConfigLatencyTarget, &latencyTarget);
+  if (omx_err != OMX_ErrorNone)
+  {
+    fprintf(stderr, "Error setting OMX_IndexConfigLatencyTarget omx_err(0%08x)", omx_err);
   }
 
   if(status == 0 &&
@@ -314,7 +358,12 @@ void video_play(void)
             first_packet = 0;
          }
          else
-            buf->nFlags = OMX_BUFFERFLAG_TIME_UNKNOWN;
+         {
+            //buf->nFlags = OMX_BUFFERFLAG_TIME_UNKNOWN;
+            buf->nFlags = 0;
+            buf->nOffset = 0;
+            buf->nTimeStamp = ToOMXTime(555);
+         }
 
          if(OMX_EmptyThisBuffer(ILC_GET_HANDLE(video_decode), buf) != OMX_ErrorNone)
          {
