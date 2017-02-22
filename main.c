@@ -63,8 +63,8 @@ rxBuffer_t rxTcpBuffer;
 
 #define VIDEO_PID	256
 
-#define SCREEN_RESOLUTION_HEIGHT  1080
-#define SCREEN_RESOLUTION_WIDTH   1920
+#define SCREEN_RESOLUTION_HEIGHT  768
+#define SCREEN_RESOLUTION_WIDTH   1024
 
 static FILE *input_file;
 static int input_socket;
@@ -102,8 +102,8 @@ static unsigned int ts_read(unsigned char* destination, unsigned int length)
 
 #define OVERLAY_DISPLAY_NUM	2
 #define OVERLAY_LAYER_NUM	1
-#define OVERLAY_LAYER_X		(1*(SCREEN_RESOLUTION_WIDTH-800)/25)
-#define OVERLAY_LAYER_Y		(24*(SCREEN_RESOLUTION_HEIGHT-200)/25)
+#define OVERLAY_LAYER_X		(1*(SCREEN_RESOLUTION_WIDTH-450)/45)
+#define OVERLAY_LAYER_Y		(7*(SCREEN_RESOLUTION_HEIGHT-106)/8)
 
 pthread_t video_thread;
 void video_play(void);
@@ -260,13 +260,13 @@ void video_play(void)
   configDisplay.nPortIndex = 90; //m_omx_render.GetInputPort();
 
   configDisplay.set        = (OMX_DISPLAYSETTYPE)(OMX_DISPLAY_SET_NOASPECT | OMX_DISPLAY_SET_MODE | OMX_DISPLAY_SET_SRC_RECT | OMX_DISPLAY_SET_FULLSCREEN | OMX_DISPLAY_SET_PIXEL);
-  configDisplay.noaspect   = OMX_TRUE;
+  configDisplay.noaspect   = OMX_FALSE; //OMX_TRUE;
   configDisplay.mode       = OMX_DISPLAY_MODE_LETTERBOX;
 
   configDisplay.src_rect.x_offset   = (int)(0+0.5f);
-  configDisplay.src_rect.y_offset   = (int)(0+0.5f);
+  configDisplay.src_rect.y_offset   = (int)((SCREEN_RESOLUTION_HEIGHT-576)/2+0.5f);
   configDisplay.src_rect.width      = (int)(SCREEN_RESOLUTION_WIDTH+0.5f);
-  configDisplay.src_rect.height     = (int)(SCREEN_RESOLUTION_HEIGHT+0.5f);
+  configDisplay.src_rect.height     = (int)(576+0.5f);
 
   configDisplay.fullscreen = OMX_TRUE;
   configDisplay.pixel_x = 0;
