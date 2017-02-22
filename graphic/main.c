@@ -8,7 +8,7 @@
 #include <shapes.h>
 
 #include "ariss_logo.h"
-static int logo_w = 737, logo_h = 720;
+static int logo_w = 369, logo_h = 360;
 
 static int terminated; 
 
