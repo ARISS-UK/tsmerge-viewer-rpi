@@ -118,7 +118,7 @@ void* video_loop(void *arg)
     
     while(ts_read(canary_buffer,canary_length) == 0) {};
 
-    printf("Starting video playback.\n");
+    printf("Video in buffer. Preparing overlay..\n");
 
     char tmp_overlay_filename[] = "/tmp/ariss-video-overlay_XXXXXX";
     int tmp_overlay_file = mkstemp(tmp_overlay_filename);
@@ -157,7 +157,9 @@ void* video_loop(void *arg)
       fprintf(stderr, "Error updating overlay image with offsets\n");
     }
     
+    printf("Starting Video player..\n");
     video_play();
+    printf("Video player stopped.\n");
 
     printf("Stopping video playback.\n");
     destroyImageLayer(&overlay_imageLayer);
@@ -166,6 +168,7 @@ void* video_loop(void *arg)
       fprintf(stderr, "Error closing dispmanx display\n");
     }
     unlink(tmp_overlay_filename);
+    printf("Overlay stopped. Waiting for data..");
   }
 }
 void video_play(void)
@@ -289,7 +292,7 @@ void video_play(void)
       {
          // feed data and wait until we get port settings changed
          buf->nFilledLen = ts_read(buf->pBuffer, buf->nAllocLen);
-
+         
          if(buf->nFilledLen == 0)
             break;
 
