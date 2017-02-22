@@ -37,7 +37,7 @@ cd graphic/ && make && sudo make install && cd ../
 ### Compile and Install ARISS Video Module
 
 ```
-vim ariss_video.service # Set upstream hostname for connection
+vim ariss-video.service # Set upstream hostname for connection
 
 make && sudo make install
 ```
