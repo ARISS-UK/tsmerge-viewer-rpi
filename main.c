@@ -99,7 +99,7 @@ static unsigned int ts_read(unsigned char* destination, unsigned int length)
 	}
 }
 
-#define OVERLAY_PNG_PATH 	"/home/pi/ariss-tsmerge-viewer-rpi/stream-overlay.png"
+#define OVERLAY_PNG_PATH 	"/opt/vc/src/hello_pi/ariss-tsmerge-viewer-rpi/stream-overlay.png"
 #define OVERLAY_DISPLAY_NUM	2
 #define OVERLAY_LAYER_NUM	1
 #define OVERLAY_LAYER_X		(1*(SCREEN_RESOLUTION_WIDTH-800)/25)
