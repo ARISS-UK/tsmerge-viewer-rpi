@@ -22,11 +22,13 @@ LDFLAGS+=-L/opt/vc/lib/ -lbcm_host -lm $(shell libpng-config --ldflags)
 
 INCLUDES+=-I/opt/vc/include/ -I/opt/vc/include/interface/vcos/pthreads -I/opt/vc/include/interface/vmcs_host/linux
 
-all: $(OBJS)
+all: ariss_overlay.h $(OBJS)
 	$(CC) -g -gdwarf-3 -Og -o $(BIN) -Wl,--whole-archive $(OBJS) $(LDFLAGS) -Wl,--no-whole-archive -rdynamic
 
-%.o: %.c
+ariss_overlay.h:
 	xxd -i ariss_overlay.png > ariss_overlay.h
+
+%.o: %.c
 	@rm -f $@ 
 	$(CC) $(CFLAGS) $(INCLUDES) -g -c $< -o $@ -Wno-deprecated-declarations
 
