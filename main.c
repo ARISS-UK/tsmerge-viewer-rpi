@@ -43,6 +43,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 static int terminated;
 
+#include "ariss_overlay.h"
 #include "backgroundLayer.h"
 #include "imageLayer.h"
 #include "key.h"
@@ -99,7 +100,6 @@ static unsigned int ts_read(unsigned char* destination, unsigned int length)
 	}
 }
 
-#define OVERLAY_PNG_PATH 	"/opt/vc/src/hello_pi/ariss-tsmerge-viewer-rpi/stream-overlay.png"
 #define OVERLAY_DISPLAY_NUM	2
 #define OVERLAY_LAYER_NUM	1
 #define OVERLAY_LAYER_X		(1*(SCREEN_RESOLUTION_WIDTH-800)/25)
@@ -119,6 +119,17 @@ void* video_loop(void *arg)
     while(ts_read(canary_buffer,canary_length) == 0) {};
 
     printf("Starting video playback.\n");
+
+    char tmp_overlay_filename[] = "/tmp/ariss-video-overlay_XXXXXX";
+    int tmp_overlay_file = mkstemp(tmp_overlay_filename);
+    if(tmp_overlay_file < 0)
+    {
+        printf("Error opening temporary file for overlay!\n");
+        break;
+    }
+    write(tmp_overlay_file, ariss_overlay_png, ariss_overlay_png_len);
+    close(tmp_overlay_file);
+
     DISPMANX_MODEINFO_T overlay_info;
     IMAGE_LAYER_T overlay_imageLayer;
     DISPMANX_DISPLAY_HANDLE_T overlay_display = vc_dispmanx_display_open(OVERLAY_DISPLAY_NUM);
@@ -130,9 +141,9 @@ void* video_loop(void *arg)
     {
       fprintf(stderr, "Error loading dispmanx display info.\n");
     }
-    if (loadPng(&(overlay_imageLayer.image), OVERLAY_PNG_PATH) == false)
+    if (loadPng(&(overlay_imageLayer.image), tmp_overlay_filename) == false)
     {
-      fprintf(stderr, "Error loading overlay png:"OVERLAY_PNG_PATH"\n");
+      fprintf(stderr, "Error loading overlay png: %s\n", tmp_overlay_filename);
     }
     createResourceImageLayer(&overlay_imageLayer, OVERLAY_LAYER_NUM);
     DISPMANX_UPDATE_HANDLE_T overlay_update = vc_dispmanx_update_start(0);
@@ -154,6 +165,7 @@ void* video_loop(void *arg)
     {
       fprintf(stderr, "Error closing dispmanx display\n");
     }
+    unlink(tmp_overlay_filename);
   }
 }
 void video_play(void)

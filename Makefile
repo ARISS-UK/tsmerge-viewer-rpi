@@ -26,6 +26,7 @@ all: $(OBJS)
 	$(CC) -g -gdwarf-3 -Og -o $(BIN) -Wl,--whole-archive $(OBJS) $(LDFLAGS) -Wl,--no-whole-archive -rdynamic
 
 %.o: %.c
+	xxd -i ariss_overlay.png > ariss_overlay.h
 	@rm -f $@ 
 	$(CC) $(CFLAGS) $(INCLUDES) -g -c $< -o $@ -Wno-deprecated-declarations
 
