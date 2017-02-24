@@ -74,6 +74,31 @@ static enum input_source_t input_source = SOURCE_NONE;
 
 static uint64_t data_received = 0;
 
+static inline OMX_TICKS ToOMXTime(int64_t pts)
+{
+  OMX_TICKS ticks;
+  ticks.nLowPart = pts;
+  ticks.nHighPart = pts >> 32;
+  return ticks;
+}
+static inline int64_t FromOMXTime(OMX_TICKS ticks)
+{
+  int64_t pts = ticks.nLowPart | ((uint64_t)(ticks.nHighPart) << 32);
+  return pts;
+}
+
+uint64_t timestamp_ms(void)
+{
+    struct timespec tp;
+
+    if(clock_gettime(CLOCK_REALTIME, &tp) != 0)
+    {
+        return(0);
+    }
+
+    return((uint64_t) tp.tv_sec * 1000 + tp.tv_nsec / 1000000);
+}
+
 static uint64_t timestamp(void) {
   uint64_t _ts = 0;
   
@@ -156,6 +181,9 @@ void* video_loop(void *arg)
     {
       fprintf(stderr, "Error updating overlay image with offsets\n");
     }
+
+    printf("Letting video pre-buffer..\n");
+    usleep(750*1000);
     
     printf("Starting Video player..\n");
     video_play();
@@ -278,6 +306,22 @@ void video_play(void)
     printf("Error setting render display options! omx_err(0x%08x)\n", omx_err);
   }
 
+  OMX_PARAM_BRCMVIDEODECODEERRORCONCEALMENTTYPE concanParam;
+  memset(&concanParam, 0, sizeof(concanParam));
+  concanParam.nSize = sizeof(concanParam);
+  concanParam.nVersion.s.nVersionMajor = OMX_VERSION_MAJOR;
+  concanParam.nVersion.s.nVersionMinor = OMX_VERSION_MINOR;
+  concanParam.nVersion.s.nRevision = OMX_VERSION_REVISION;
+  concanParam.nVersion.s.nStep = OMX_VERSION_STEP;
+  
+  concanParam.bStartWithValidFrame = OMX_TRUE;
+
+  omx_err = OMX_SetConfig(ILC_GET_HANDLE(video_decode), OMX_IndexParamBrcmVideoDecodeErrorConcealment, &concanParam);
+  if (omx_err != OMX_ErrorNone)
+  {
+    printf("Error setting decode codec_error_concealment options! omx_err(0x%08x)\n", omx_err);
+  }
+
   if(status == 0 &&
     OMX_SetParameter(ILC_GET_HANDLE(video_decode), OMX_IndexParamVideoPortFormat, &format) == OMX_ErrorNone &&
     ilclient_enable_port_buffers(video_decode, 130, NULL, NULL, NULL) == 0)
@@ -295,6 +339,41 @@ void video_play(void)
          
          if(buf->nFilledLen == 0)
             break;
+         
+         /*
+         int i;
+         int64_t pts = 0;
+         for(i=0;i<buf->nFilledLen;i++)
+         {
+           if(buf->pBuffer[0] == 0x00)
+           {
+             if(buf->pBuffer[1] == 0x00)
+             {
+               if(buf->pBuffer[2] == 0x01)
+               {
+                 //printf("Possible PES Start, Stream ID: 0x%02x, Length:0x%02x%02x\n"
+                 //  ,buf->pBuffer[3]
+                 //  ,buf->pBuffer[4],buf->pBuffer[5]
+                 //);
+                 //printf(" - PTS/DTS: %02x, Extra length: %02x\n"
+                 //  ,(buf->pBuffer[7] & 0xc0) >> 6
+                 //  ,buf->pBuffer[8]
+                 //);
+                 //printf(" - Extra ID: 0x%02x\n"
+                 //  ,(buf->pBuffer[9] & 0xF0) >> 4
+                 //);
+                 pts |= (buf->pBuffer[9] & 0x0E) << 30;
+                 pts |= (buf->pBuffer[10] & 0xFF) << 22;
+                 pts |= (buf->pBuffer[11] & 0xFE) << 15;
+                 pts |= (buf->pBuffer[12] & 0xFF) << 7;
+                 pts |= (buf->pBuffer[11] & 0xFE) >> 1;
+
+                 //printf("PTS: 0x%lld\n",pts);
+               }
+             }
+           }
+         }
+         */
 
          buf->nOffset = 0;
 
@@ -329,7 +408,11 @@ void video_play(void)
             first_packet = 0;
          }
          else
+         {
             buf->nFlags = OMX_BUFFERFLAG_TIME_UNKNOWN;
+            //buf->nFlags = 0; // PTS
+            //buf->nTimeStamp = ToOMXTime(pts);
+         }
 
          if(OMX_EmptyThisBuffer(ILC_GET_HANDLE(video_decode), buf) != OMX_ErrorNone)
          {
@@ -524,6 +607,8 @@ void* tcp_buffer_loop(void *arg)
 	uint8_t video_buffer[16384];
   ts_header_t ts_header;
 
+    uint64_t last_one = 0;
+
 	while(1)
 	{
 		length = rxBufferWaitTSPop(&rxTcpBuffer, buffer);
@@ -544,8 +629,12 @@ void* tcp_buffer_loop(void *arg)
 		if((ts_header.pid == VIDEO_PID) && (ts_header.payload_flag > 0))
 		{
 			memcpy(video_buffer,&buffer[ts_header.payload_offset], (TS_PACKET_SIZE - ts_header.payload_offset));
+			if((timestamp_ms()-last_one)>10)
+			  //printf("Pushing to video buffer (%d bytes), gap: %lu ms\n", (TS_PACKET_SIZE - ts_header.payload_offset), (timestamp_ms()-last_one));
+                        last_one = timestamp_ms();
 
-			//printf("Pushing to video buffer (%d bytes)\n", video_length);
+
+
 			rxBufferPush(&rxBuffer, video_buffer, (TS_PACKET_SIZE - ts_header.payload_offset));
 		}
 	}
@@ -664,7 +753,11 @@ int main (int argc, char **argv)
    	printf("Starting video thread..\n");
    	pthread_create(&video_thread, NULL, &video_loop, NULL);
 
-   	while(!terminated) { usleep(100*1000); }
+   	while(!terminated)
+        {
+          //printf("Head - Tail: %d\n",rxBufferHead(&rxBuffer) - rxBufferTail(&rxBuffer));
+          usleep(50*1000);
+        }
 
    	switch(input_source)
 	{
